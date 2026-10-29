@@ -1,0 +1,141 @@
+### Works in IntelliJ (HTTP client) and VS Code (REST Client extension)
+@base = http://localhost:8080
+
+### Dashboard numbers
+GET {{base}}/api/reports/summary
+
+### All donors / filtered
+GET {{base}}/api/donors
+###
+GET {{base}}/api/donors?bloodGroup=O%2B&city=Ahmedabad
+
+### One donor + can he donate today?
+GET {{base}}/api/donors/1
+###
+GET {{base}}/api/donors/3/eligibility
+
+### Register a donor (201)
+POST {{base}}/api/donors
+Content-Type: application/json
+
+{
+  "fullName": "Isha Rathod",
+  "email": "isha.rathod@mail.com",
+  "phone": "9811122233",
+  "bloodGroup": "O-",
+  "city": "Ahmedabad",
+  "dateOfBirth": "1999-10-05"
+}
+
+### Same email again (409)
+POST {{base}}/api/donors
+Content-Type: application/json
+
+{
+  "fullName": "Isha Rathod",
+  "email": "isha.rathod@mail.com",
+  "phone": "9811122233",
+  "bloodGroup": "O-",
+  "city": "Ahmedabad",
+  "dateOfBirth": "1999-10-05"
+}
+
+### Validation errors (400)
+POST {{base}}/api/donors
+Content-Type: application/json
+
+{ "fullName": "", "email": "not-an-email", "phone": "123", "bloodGroup": "A+", "city": "", "dateOfBirth": "2030-01-01" }
+
+### Under age (422)
+POST {{base}}/api/donors
+Content-Type: application/json
+
+{ "fullName": "Young Kid", "email": "kid@mail.com", "phone": "9811100000", "bloodGroup": "B+", "city": "Surat", "dateOfBirth": "2015-01-01" }
+
+### Wrong blood group value (400)
+POST {{base}}/api/donors
+Content-Type: application/json
+
+{ "fullName": "Test", "email": "t@mail.com", "phone": "9811100000", "bloodGroup": "Z+", "city": "Surat", "dateOfBirth": "1995-01-01" }
+
+### Donor not found (404)
+GET {{base}}/api/donors/999
+
+### Bad id type (400)
+GET {{base}}/api/donors/abc
+
+### Deactivate donor (204)
+DELETE {{base}}/api/donors/10
+
+### Hospitals
+GET {{base}}/api/hospitals
+###
+POST {{base}}/api/hospitals
+Content-Type: application/json
+
+{ "name": "Shree Care Hospital", "city": "Rajkot", "contactNumber": "0281234567", "registrationNo": "GJ-RJT-3301" }
+
+### Open requests (critical first)
+GET {{base}}/api/requests?status=OPEN
+
+### New emergency request (201)
+POST {{base}}/api/requests
+Content-Type: application/json
+
+{
+  "hospitalId": 1,
+  "patientName": "Mahesh Chauhan",
+  "bloodGroup": "B+",
+  "unitsNeeded": 2,
+  "urgency": "CRITICAL",
+  "requiredBy": "2026-12-31"
+}
+
+### Who can we call for request 1?
+GET {{base}}/api/requests/1/matches
+
+### Record a donation straight to request 1 (201)
+POST {{base}}/api/donations
+Content-Type: application/json
+
+{ "donorId": 2, "requestId": 1 }
+
+### Same donor again -> 90 day rule (422)
+POST {{base}}/api/donations
+Content-Type: application/json
+
+{ "donorId": 2, "requestId": 1 }
+
+### Incompatible group: B+ donor (id 3 is blocked by gap anyway, use a B donor) to an A+ request
+POST {{base}}/api/donations
+Content-Type: application/json
+
+{ "donorId": 9, "requestId": 1 }
+
+### Donation into general stock (no request)
+POST {{base}}/api/donations
+Content-Type: application/json
+
+{ "donorId": 1 }
+
+### Stock
+GET {{base}}/api/stock
+###
+GET {{base}}/api/stock/O+
+###
+POST {{base}}/api/stock/O_POS/add?units=4
+
+### Serve request 1 from stock / cancel it
+POST {{base}}/api/requests/1/fulfill-from-stock
+###
+POST {{base}}/api/requests/3/cancel
+
+### Wrong method (405)
+DELETE {{base}}/api/requests
+
+### Unknown url (404)
+GET {{base}}/api/nothing-here
+
+### SOAP: use docs/soap/*.xml with Postman/SoapUI, or curl:
+# curl -H "Content-Type: text/xml" -d @docs/soap/check-stock.xml http://localhost:8080/ws
+# WSDL:  http://localhost:8080/ws/bloodlink.wsdl

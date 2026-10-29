@@ -1,0 +1,308 @@
+==========================================================================
+ BLOODLINK - WORK DIVISION AND VIVA GUIDE (3 PERSONS)
+==========================================================================
+
+Project : BloodLinkD - Blood Donation and Emergency Request System
+Stack   : Java 17, Spring Boot 3, Spring Data JPA, Spring Web Services
+          (SOAP), Bean Validation, H2 / MySQL, Maven
+
+Team    : Person 1 = Pushpendra
+          Person 2 = Meet
+          Person 3 = Swayam
+
+(Everyone must run the project once and read ALL their
+files, because sir can ask anyone anything about their own part.)
+
+
+--------------------------------------------------------------------------
+ 0. THE PROJECT IN 4 LINES (anyone can say this)
+--------------------------------------------------------------------------
+When a patient needs blood, people search donors on phone and WhatsApp.
+BloodLinkD keeps donors, hospital requests and blood stock in one system.
+For every request it finds donors of the same city, with compatible blood
+group, who are allowed to donate today (age 18-65, 90 days gap).
+REST API is for the app/users, SOAP API is for other systems (hospitals).
+
+
+--------------------------------------------------------------------------
+ 1. DIVISION AT A GLANCE
+--------------------------------------------------------------------------
+ PERSON 1 (Pushpendra) : Donors + Hospitals + Validation + Exception Handling
+ PERSON 2 (Meet)       : Blood Requests + Matching + Donations (core workflow)
+ PERSON 3 (Swayam)     : Blood Stock + Reports + SOAP Service + Database/Config
+
+Package root: src/main/java/com/example/bloodlink/
+
+
+--------------------------------------------------------------------------
+ 2. PERSON 1 (PUSHPENDRA) - DONORS, HOSPITALS, VALIDATION, EXCEPTIONS
+--------------------------------------------------------------------------
+Files owned
+  model/       Donor.java, Hospital.java
+  repository/  DonorRepository.java, HospitalRepository.java
+  service/     DonorService.java, HospitalService.java
+  controller/  DonorController.java, HospitalController.java
+  dto/         Eligibility.java
+  exception/   ResourceNotFoundException, DuplicateResourceException,
+               BusinessRuleException, ErrorResponse,
+               GlobalExceptionHandler
+
+What to explain
+  1. Donor and Hospital entities: fields, @Entity, @Id, unique email and
+     unique hospital registration number.
+  2. Validation on Donor: @NotBlank, @Email, @Pattern (10 digit mobile
+     starting 6-9), @Past for date of birth. Wrong data -> 400.
+  3. DonorService.register(): checks age (18-65 from properties), checks
+     duplicate email, and resets id / active / registeredOn so the client
+     cannot fake them.
+  4. checkEligibility(): 3 rules -> profile active, age in range, last
+     donation at least 90 days ago. Returns eligible + reason + next date.
+  5. DELETE donor = soft delete (active=false), history is kept.
+  6. GlobalExceptionHandler (same idea as Practical 12): one place that
+     converts every exception into the same JSON:
+     { timestamp, status, error, message, path }
+
+Status codes to remember
+  400 bad input / validation / bad JSON / bad id type
+  404 not found / unknown URL        405 wrong HTTP method
+  409 duplicate email / reg number   422 business rule broken
+  500 unexpected error (details go to log, not to the user)
+
+Demo (show in Postman or docs/api-tests.http)
+  - GET  /api/donors, GET /api/donors?bloodGroup=O%2B&city=Ahmedabad
+  - POST /api/donors  (valid -> 201)
+  - POST same email -> 409
+  - POST with empty name / wrong phone -> 400 with all field messages
+  - POST with date of birth 2015 -> 422 (under age)
+  - GET  /api/donors/999 -> 404,  GET /api/donors/abc -> 400
+  - GET  /api/donors/3/eligibility -> not eligible (donated 30 days ago)
+  - DELETE /api/donors/10 -> 204
+
+Questions sir may ask
+  Q: Why @RestControllerAdvice?
+  A: Error handling is in one place, controllers stay clean and every
+     error has the same JSON format.
+  Q: Why 400 for validation but 422 for age/90 days?
+  A: 400 means the request itself is wrong (missing/invalid field). 422
+     means data is valid but the action is not allowed by business rules.
+  Q: Why are donors not deleted?
+  A: Donation records point to the donor, and history must stay. So we
+     only set active=false.
+  Q: Why is age checked in the service and not by annotation?
+  A: Annotations check one field. Age needs calculation with today's date
+     and limits read from application.properties.
+  Q: Email is checked for duplicate, then why unique constraint also?
+  A: Two requests at the same time can pass the check. The database
+     constraint is the last safety; it throws DataIntegrityViolation which
+     our handler converts to 409.
+  Q: Difference between @Valid and @RequestBody?
+  A: @RequestBody converts JSON to object, @Valid runs the validation
+     annotations on that object.
+
+
+--------------------------------------------------------------------------
+ 3. PERSON 2 (MEET) - BLOOD REQUESTS, MATCHING, DONATIONS (CORE LOGIC)
+--------------------------------------------------------------------------
+Files owned
+  model/       BloodGroup.java, BloodRequest.java, Donation.java,
+               Urgency.java, RequestStatus.java
+  repository/  BloodRequestRepository.java, DonationRepository.java
+  service/     BloodRequestService.java, MatchingService.java,
+               DonationService.java
+  controller/  BloodRequestController.java, DonationController.java
+  dto/         BloodRequestForm.java, DonationForm.java, DonorMatch.java
+  test/        BloodGroupTest.java
+
+What to explain
+  1. BloodGroup enum: A+, A-, B+, B-, AB+, AB-, O+, O-.
+     compatibleDonors() says whose blood a patient can receive.
+     (O- gives to all, AB+ receives from all.) Accepts "O+" or "O_POS".
+  2. BloodRequest: hospital, patient, group, unitsNeeded, unitsFulfilled,
+     urgency (NORMAL/URGENT/CRITICAL), status (OPEN/FULFILLED/CANCELLED).
+  3. Creating a request: BloodRequestForm is validated (1 to 10 units,
+     date not in the past) and hospital must exist (else 404).
+  4. Listing: critical first, then the earliest required-by date.
+  5. MatchingService.findMatches(): same city as hospital + compatible
+     group + eligible today. Sorted: exact group first, then the donor who
+     waited longest (or never donated).
+  6. DonationService.record(): donor must be eligible; if requestId is
+     given the blood goes to that request (group must be compatible,
+     request must be OPEN), else it goes to stock. Then donor's last
+     donation date is updated. All in ONE @Transactional method.
+  7. Request closes automatically: FULFILLED when unitsFulfilled reaches
+     unitsNeeded. Cancel is allowed only for OPEN requests.
+
+Demo (fresh database, demo data loaded)
+  - GET  /api/requests?status=OPEN      -> critical request comes first
+  - GET  /api/requests/1/matches        -> request 1 = A+ in Ahmedabad.
+        Expected order: Meera (A+), Sagar (A+), Anjali (O-), Rohan (O+),
+        Dhruv (O+). Karan (B+) is not shown (wrong group + donated
+        30 days ago).
+  - POST /api/donations {"donorId":2,"requestId":1}  -> 201
+  - Same body again -> 422 (donated today, 90 day rule)
+  - POST /api/donations {"donorId":9,"requestId":1}  -> 422
+        (B- donor cannot give to A+ patient)
+  - POST /api/requests (new request) -> 201
+  - POST /api/requests/3/cancel, then cancel again -> 422 (already closed)
+
+Questions sir may ask
+  Q: How does matching work?
+  A: Query by city + compatible groups + active, then filter by
+     eligibility in Java, then sort exact match first and longest-waiting
+     donor first.
+  Q: Why is compatibility inside the enum?
+  A: One single place for the rule, easy to test (BloodGroupTest) and
+     reused by matching and donation.
+  Q: Why @Transactional on record()?
+  A: One donation changes 3 things: request/stock, donor date, donation
+     row. If any step fails everything is rolled back.
+  Q: Why the 90 day rule is not written inside the code as number?
+  A: It is in application.properties (bloodlink.donation-gap-days) and
+     read with @Value, so it can be changed without editing code.
+  Q: What happens when units are partly done?
+  A: unitsFulfilled increases by one per donation; status stays OPEN until
+     unitsRemaining becomes 0 then it becomes FULFILLED.
+  Q: Why DTO (BloodRequestForm) instead of using entity directly?
+  A: Client sends only hospitalId and needed fields; it cannot set status,
+     fulfilled count or createdAt.
+
+
+--------------------------------------------------------------------------
+ 4. PERSON 3 (SWAYAM) - STOCK, REPORTS, SOAP SERVICE, DATABASE AND CONFIG
+--------------------------------------------------------------------------
+Files owned
+  model/       BloodStock.java
+  repository/  BloodStockRepository.java
+  service/     StockService.java, ReportService.java
+  controller/  StockController.java, ReportController.java
+  dto/         Summary.java
+  soap/        BloodLinkEndpoint.java, SoapClientException.java,
+               ws/package-info.java, ws/CheckStockRequest.java,
+               ws/CheckStockResponse.java, ws/CheckEligibilityRequest.java,
+               ws/CheckEligibilityResponse.java
+  config/      WebServiceConfig.java, WebConfig.java, DataSeeder.java
+  resources/   xsd/bloodlink.xsd, application.properties
+  root         pom.xml
+
+What to explain
+  1. Blood stock: one row per blood group with unitsAvailable. add() and
+     take() (take refuses when stock is not enough -> 422).
+     Level: 0 = OUT_OF_STOCK, below 5 = LOW, else OK.
+  2. Report: GET /api/reports/summary gives total/active donors, donors
+     eligible today, open and critical requests, total donations, stock.
+  3. SOAP service (contract first):
+     - bloodlink.xsd defines 2 operations: CheckStock, CheckEligibility.
+     - Spring-WS generates WSDL at /ws/bloodlink.wsdl.
+     - BloodLinkEndpoint (@Endpoint) + @PayloadRoot picks the method by
+       namespace + root element name.
+     - ws/ classes are JAXB classes (XML <-> Java objects).
+     - Errors (unknown donor, wrong blood group) are sent as SOAP Fault.
+  4. WebServiceConfig: MessageDispatcherServlet on /ws/*, so SOAP is under
+     /ws and REST is under /api.
+  5. Database: H2 file database by default (no install), JPA creates
+     tables (ddl-auto=update). MySQL can be used by changing 4 lines in
+     application.properties (mysql driver is already in pom.xml).
+  6. WebConfig: converter so URL can use "O+" (or O_POS) as blood group.
+  7. DataSeeder: loads demo data only when the database is empty.
+
+Demo
+  - GET  /api/stock, GET /api/stock/O+, POST /api/stock/O_POS/add?units=4
+  - GET  /api/reports/summary
+  - Open http://localhost:8080/ws/bloodlink.wsdl in browser
+  - Postman: POST http://localhost:8080/ws  (Content-Type text/xml) with
+    docs/soap/check-stock.xml, then check-eligibility.xml
+  - Send blood group "Z+" in SOAP -> SOAP Fault shown
+  - Open http://localhost:8080/h2-console (JDBC URL
+    jdbc:h2:file:./data/bloodlink, user sa, no password) and show the
+    tables donors, hospitals, blood_requests, donations, blood_stock
+
+Questions sir may ask
+  Q: REST vs SOAP?
+  A: REST uses URLs + HTTP methods, usually JSON, light and simple. SOAP
+     uses XML messages with a strict contract (WSDL/XSD); good when
+     another organisation's system must integrate with a fixed contract.
+  Q: What is WSDL and XSD?
+  A: XSD describes the message structure (fields and types). WSDL
+     describes the service: operations, messages and the endpoint URL.
+  Q: What does contract-first mean?
+  A: We wrote the XSD first, the WSDL is generated from it, then Java
+     classes follow the contract.
+  Q: How does a SOAP request reach the right Java method?
+  A: MessageDispatcherServlet receives it on /ws, then @PayloadRoot
+     matches the namespace and the root element (CheckStockRequest).
+  Q: Why is SOAP used in this project?
+  A: A hospital's or another blood bank's software can check stock or a
+     donor's eligibility using a fixed contract without knowing our REST.
+  Q: What is ddl-auto=update?
+  A: Hibernate creates/updates tables from the entity classes at startup.
+  Q: How will you change to MySQL?
+  A: Create database bloodlink, then replace the datasource url, driver,
+     username and password in application.properties.
+  Q: What is a SOAP Fault?
+  A: The standard SOAP way of returning an error (like HTTP error codes
+     in REST).
+
+
+--------------------------------------------------------------------------
+ 5. FULL DEMO ORDER (about 8-10 minutes)
+--------------------------------------------------------------------------
+ 1. Swayam      - 20 sec: start the app, show H2 tables and demo data
+ 2. Pushpendra - register donor, validation errors, duplicate, not found
+ 3. Pushpendra - eligibility check of donor 3
+ 4. Meet        - open requests, matches for request 1
+ 5. Meet        - record donation, 90 day error, incompatible blood error
+ 6. Swayam      - stock, fulfil a request from stock
+              (POST /api/requests/1/fulfill-from-stock; A+ stock is 3 so
+               it takes 2 units and request becomes FULFILLED)
+ 7. Swayam      - summary report, WSDL, SOAP calls in Postman
+ 8. Pushpendra - close with the error-handling table (one line each)
+
+Note: IDs in this guide are for a fresh database. Delete the "data" folder
+before the demo so the IDs match.
+
+
+--------------------------------------------------------------------------
+ 6. QUESTIONS FOR ALL THREE
+--------------------------------------------------------------------------
+ Q: Explain the layers.
+ A: Controller takes HTTP request -> Service has business rules ->
+    Repository talks to DB through JPA -> Model = tables.
+ Q: Why constructor injection?
+ A: Dependencies are final and clear, and easy to test.
+ Q: What is Spring Data JPA doing for you?
+ A: We only write interfaces (JpaRepository); Spring creates the
+    implementation and query methods like existsByEmailIgnoreCase.
+ Q: Which exceptions are handled globally?
+ A: Not found, duplicate, business rule, validation, invalid JSON, wrong
+    parameter type, missing parameter, wrong method, unsupported media
+    type, unknown URL, database constraint, and everything else.
+ Q: What would you add next?
+ A: Login/roles (donor, hospital, admin), SMS/email alert to matching
+    donors, pagination, and a frontend.
+
+--------------------------------------------------------------------------
+ 7. RUN STEPS (everyone should know)
+--------------------------------------------------------------------------
+ 1. STS/Eclipse: File > Import > Maven > Existing Maven Projects
+ 2. Run BloodLinkDApplication as Spring Boot App
+ 3. Test with docs/api-tests.http, Postman, or browser for GET calls
+ 4. Delete the "data" folder to reset the database
+=====================================================================
+
+--------------------------------------------------------------------------
+ 8. FRONTEND (http://localhost:8080/)
+--------------------------------------------------------------------------
+Plain HTML + CSS + JavaScript in src/main/resources/static (no extra
+install). Spring Boot serves it automatically and the page calls our REST
+API with fetch(). Everyone explains the screen of their own module:
+  Pushpendra : Donors screen (register, filter, "Can donate?", deactivate)
+               and Hospitals screen; error messages shown as toast
+  Meet       : Blood requests screen (create, "Find donors" = matching,
+               "Record donation") and Donations screen
+  Swayam     : Overview screen (summary numbers, stock bags, add stock)
+Q: How does the frontend talk to backend?
+A: JavaScript fetch() calls the /api URLs; the backend returns JSON; the
+   page builds tables from it. Errors use our standard JSON "message".
+Q: Why no CORS setting?
+A: Frontend and API are served from the same address and port.
+==========================================================================

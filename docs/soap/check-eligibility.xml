@@ -1,0 +1,9 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:bl="http://bloodlink.example.com/soap">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <bl:CheckEligibilityRequest>
+         <bl:donorId>3</bl:donorId>
+      </bl:CheckEligibilityRequest>
+   </soapenv:Body>
+</soapenv:Envelope>

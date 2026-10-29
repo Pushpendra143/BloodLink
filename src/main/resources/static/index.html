@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>BloodLinkD</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside>
+    <h1>BloodLinkD</h1>
+    <p>Blood bank console</p>
+    <nav id="nav">
+      <button data-view="dashboard">Overview</button>
+      <button data-view="donors">Donors</button>
+      <button data-view="requests">Blood requests</button>
+      <button data-view="donations">Donations</button>
+      <button data-view="hospitals">Hospitals</button>
+    </nav>
+    <small>SOAP contract: <a href="/ws/bloodlink.wsdl" target="_blank">bloodlink.wsdl</a></small>
+  </aside>
+  <main id="main"></main>
+  <div id="toast" role="status"></div>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:bl="http://bloodlink.example.com/soap">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <bl:CheckStockRequest>
+         <bl:bloodGroup>O+</bl:bloodGroup>
+      </bl:CheckStockRequest>
+   </soapenv:Body>
+</soapenv:Envelope>

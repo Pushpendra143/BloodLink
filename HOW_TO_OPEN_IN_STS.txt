@@ -1,0 +1,34 @@
+HOW TO OPEN BloodLinkD IN STS / ECLIPSE
+=======================================
+
+1. Unzip bloodlinkd.zip. You must see pom.xml directly inside the
+   "bloodlinkd" folder (not another folder inside it).
+
+2. Check Java first (most common problem):
+   This project needs JAVA 17 or higher (Spring Boot 3).
+   - Open a command prompt and run:   java -version
+   - It must say 17, 21 or higher. If it says 8 or 11, install JDK 17
+     (for example Eclipse Temurin 17) and add it in STS:
+     Window > Preferences > Java > Installed JREs > Add... > select the JDK 17
+     folder > tick it as default.
+   - Use STS 4.19 or newer (older STS / Eclipse versions do not support
+     Spring Boot 3). Download the latest from spring.io/tools.
+
+3. Import (use this one):
+   File > Import > Maven > Existing Maven Projects > Browse > select the
+   "bloodlinkd" folder > Finish.
+   Wait for the bottom-right progress bar ("Downloading..." / "Building")
+   to finish. Internet is needed the first time for the dependencies.
+
+4. If you see red marks / errors after the import:
+   - Right click the project > Maven > Update Project... > tick
+     "Force Update of Snapshots/Releases" > OK
+   - Right click the project > Properties > Java Compiler > set
+     "Compiler compliance level" to 17
+   - Project > Clean...
+
+5. Run: open BloodLinkDApplication.java > right click > Run As >
+   Spring Boot App. Then open http://localhost:8080/
+
+If import still fails, send the exact error text (Window > Show View >
+Problems, or Error Log) and the output of "java -version".
